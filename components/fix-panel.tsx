@@ -45,6 +45,20 @@ export function FixPanel({ auditId, url, current, initial, applyAvailable }: { a
     );
   }
 
+  async function publish(action: 'publish' | 'rollback') {
+    if (!fix?.fixId) return;
+    setBusy(true);
+    setError('');
+    const payload = action === 'publish'
+      ? { action, fixId: fix.fixId, title: fix.title.keep ? undefined : fix.title.recommended, description: fix.meta_description.keep ? undefined : fix.meta_description.recommended }
+      : { action, fixId: fix.fixId };
+    const res = await fetch('/api/fix/publish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+    const json = await res.json().catch(() => ({ error: 'Something went wrong.' }));
+    if (res.ok) setFix({ ...fix, status: json.status }); else setError(json.error);
+    setBusy(false);
+  }
+
+  const canPublish = applyAvailable && fix.fixId && (!fix.title.keep || !fix.meta_description.keep);
   const fields: Field[] = [
     { label: 'Title', current: current.title, key: 'title' },
     { label: 'Meta description', current: current.meta, key: 'meta_description' },
@@ -83,6 +97,24 @@ export function FixPanel({ auditId, url, current, initial, applyAvailable }: { a
           </div>
         );
       })}
+      {canPublish && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-line bg-white p-3">
+          {fix.status === 'applied' ? (
+            <>
+              <span className="text-sm text-accent">Published to WordPress.</span>
+              <button type="button" disabled={busy} onClick={() => publish('rollback')} className="rounded-md border border-line px-3 py-2 text-sm hover:border-ink disabled:opacity-60">{busy ? 'Rolling back…' : 'Roll back'}</button>
+            </>
+          ) : (
+            <>
+              <button type="button" disabled={busy} onClick={() => publish('publish')} className="rounded-md bg-ink px-3 py-2 text-sm font-medium text-white hover:bg-accent disabled:opacity-60">{busy ? 'Publishing…' : 'Publish title & description to WordPress'}</button>
+              {fix.status === 'rolled_back' && <span className="text-sm text-muted">Rolled back.</span>}
+              {fix.status === 'conflict' && <span className="text-sm text-warning">Skipped: the page was edited in WordPress.</span>}
+            </>
+          )}
+          <span className="w-full text-xs text-muted">The H1 is part of your page content, so copy it in by hand.</span>
+        </div>
+      )}
+      {error && <p role="alert" className="text-sm text-critical">{error}</p>}
     </div>
   );
 }

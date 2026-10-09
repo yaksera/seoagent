@@ -8,3 +8,4 @@ next-env.d.ts
 data/
 *.zip
 .DS_Store
+!public/seo-agent-connector.zip
