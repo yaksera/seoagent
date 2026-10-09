@@ -1,6 +1,10 @@
+import { and, eq, gte, sql } from 'drizzle-orm';
 import type { z } from 'zod';
+import { getDb, schema } from './db';
+import { LIMITS } from './plans';
 
 type CallOptions<T> = {
+  ctx: { feature: string; accountId: string | null; siteId: string | null };
   name: string;
   system: string;
   user: string;
@@ -22,7 +26,34 @@ Rules that always apply:
 // Keeps data from closing our tags early (a simple prompt-injection trick).
 export const escapeData = (s: string) => s.replace(/<\/?(page|page_content|site)[^>]*>/gi, '');
 
+export async function monthSpendUsd(siteId: string) {
+  const db = await getDb();
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const [row] = await db.select({ total: sql<number>`coalesce(sum(${schema.llmCalls.costUsd}), 0)::float` }).from(schema.llmCalls)
+    .where(and(eq(schema.llmCalls.siteId, siteId), gte(schema.llmCalls.createdAt, monthStart)));
+  return row?.total ?? 0;
+}
+
+// Every call is budget-checked first and logged after (cost, model, latency), success or not.
 export async function callJson<T>(opts: CallOptions<T>): Promise<CallResult<T>> {
+  const { ctx } = opts;
+  if (ctx.siteId && (await monthSpendUsd(ctx.siteId)) >= LIMITS.llmBudgetPerSiteUsd) {
+    throw new Error('This site has reached its AI budget for the month. It resets on the 1st.');
+  }
+  const started = Date.now();
+  const db = await getDb();
+  try {
+    const result = await callOpenRouter(opts);
+    await db.insert(schema.llmCalls).values({ ...ctx, model: result.model, costUsd: result.costUsd, latencyMs: Date.now() - started, ok: true });
+    return result;
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    await db.insert(schema.llmCalls).values({ ...ctx, latencyMs: Date.now() - started, ok: false, error: error.slice(0, 1000) });
+    throw e;
+  }
+}
+
+async function callOpenRouter<T>(opts: CallOptions<T>): Promise<CallResult<T>> {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) throw new Error('OPENROUTER_API_KEY is not set. Add it to .env.local and restart the server.');
   const models = [process.env.MODEL_CHEAP || 'deepseek/deepseek-v4.1-flash', process.env.MODEL_FALLBACK].filter(Boolean);

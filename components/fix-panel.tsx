@@ -18,8 +18,10 @@ function Copy({ text }: { text: string }) {
   );
 }
 
-export function FixPanel({ auditId, url, current, initial }: { auditId: string; url: string; current: { title: string; meta: string; h1: string }; initial?: PageFix }) {
-  const [fix, setFix] = useState<PageFix | undefined>(initial);
+type FixState = PageFix & { fixId?: string; status?: string };
+
+export function FixPanel({ auditId, url, current, initial, applyAvailable }: { auditId: string; url: string; current: { title: string; meta: string; h1: string }; initial?: FixState; applyAvailable?: boolean }) {
+  const [fix, setFix] = useState<FixState | undefined>(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 

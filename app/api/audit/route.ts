@@ -1,41 +1,31 @@
-import { randomUUID } from 'node:crypto';
+import { and, eq, gt, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { crawlSite } from '@/lib/crawler';
-import { runAudit } from '@/lib/rules';
-import { saveAudit } from '@/lib/store';
+import { createAudit } from '@/lib/audit-runner';
+import { getDb, schema } from '@/lib/db';
+import { LIMITS } from '@/lib/plans';
+import { assertPublicUrl } from '@/lib/safe-fetch';
 
 export const runtime = 'nodejs';
-export const maxDuration = 300;
 
 const body = z.object({ url: z.string().trim().min(3).max(2048) });
 
-// Simple per-IP limit for the MVP; replace with Redis when deployed on several instances.
-const hits = new Map<string, number[]>();
-function limited(ip: string) {
-  const now = Date.now();
-  const recent = (hits.get(ip) ?? []).filter(t => now - t < 10 * 60_000);
-  hits.set(ip, [...recent, now]);
-  return recent.length >= 5;
-}
-
+// Free audit from the home page: 20 pages, 5 per IP per hour, no account needed.
 export async function POST(req: Request) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
-  if (limited(ip)) return Response.json({ error: 'Too many audits. Try again in a few minutes.' }, { status: 429 });
-
   const parsed = body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: 'Enter a website address.' }, { status: 400 });
 
-  const started = Date.now();
+  const db = await getDb();
+  const [recent] = await db.select({ n: sql<number>`count(*)::int` }).from(schema.audits)
+    .where(and(eq(schema.audits.ip, ip), eq(schema.audits.trigger, 'free'), gt(schema.audits.createdAt, sql`now() - interval '1 hour'`)));
+  if ((recent?.n ?? 0) >= 5) return Response.json({ error: 'Too many free audits from your network. Try again in an hour, or start a free trial.' }, { status: 429 });
+
+  const raw = /^https?:\/\//i.test(parsed.data.url) ? parsed.data.url : `https://${parsed.data.url}`;
   try {
-    const crawl = await crawlSite(parsed.data.url, {
-      maxPages: Math.min(Number(process.env.MAX_PAGES) || 50, 200),
-      userAgent: process.env.CRAWLER_USER_AGENT || 'SEOAgentBot/0.1',
-    });
-    const { issues, score } = runAudit(crawl);
-    const id = randomUUID();
-    await saveAudit({ id, createdAt: new Date().toISOString(), durationMs: Date.now() - started, score, issues, crawl, fixes: {} });
-    return Response.json({ id });
+    await assertPublicUrl(raw);
   } catch (e) {
-    return Response.json({ error: e instanceof Error ? e.message : 'The crawl failed.' }, { status: 422 });
+    return Response.json({ error: e instanceof Error ? e.message : 'Invalid address.' }, { status: 422 });
   }
+  const id = await createAudit({ url: raw, trigger: 'free', maxPages: LIMITS.freeAuditPages, ip });
+  return Response.json({ id });
 }

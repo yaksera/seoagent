@@ -47,7 +47,7 @@ function check(fix: FixSuggestion, page: PageData, otherTitles: Set<string>): st
   return warnings;
 }
 
-export async function suggestFixes(page: PageData, allPages: PageData[], siteHost: string): Promise<PageFix> {
+export async function suggestFixes(page: PageData, allPages: PageData[], siteHost: string, ctx: { accountId: string | null; siteId: string | null }): Promise<PageFix> {
   const others = allPages.filter(p => p.url !== page.url && p.title);
   const user = `<site>${escapeData(siteHost)}</site>
 <page>
@@ -62,6 +62,6 @@ site_titles: ${escapeData(others.slice(0, 4).map(p => p.title).join(' || '))}
 ${escapeData(page.text.split(' ').slice(0, 900).join(' '))}
 </page_content>`;
 
-  const { data, model, costUsd } = await callJson({ name: 'title_meta_h1', system: SYSTEM, user, schema, jsonSchema, maxTokens: 700 });
+  const { data, model, costUsd } = await callJson({ ctx: { ...ctx, feature: 'title_meta_h1' }, name: 'title_meta_h1', system: SYSTEM, user, schema, jsonSchema, maxTokens: 700 });
   return { ...data, warnings: check(data, page, new Set(others.map(p => p.title.toLowerCase()))), model, costUsd, createdAt: new Date().toISOString() };
 }
