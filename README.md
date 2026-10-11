@@ -1,6 +1,6 @@
 # SEO Agent
 
-An SEO agent for small businesses: it crawls a website, explains every problem in plain English, writes fixes with AI, and publishes the ones you approve to WordPress, with rollback. $49 per website per month.
+An SEO and AI-search agent for small businesses: it scores a website for Google and for AI assistants (ChatGPT, Claude, Perplexity, Google AI Overviews), explains every problem in plain English, writes fixes, and publishes the ones you approve to WordPress, with rollback. $49 per website per month.
 
 ## Features
 **For customers**
@@ -11,6 +11,10 @@ An SEO agent for small businesses: it crawls a website, explains every problem i
 - AI-written title, meta description and H1 per page (OpenRouter), validated in code
 - WordPress connector plugin: publish fixes in one click, conflict check, rollback
 - Google Search Console: clicks, impressions, top searches, keywords close to page one
+- **AI readiness score** (0–100, 20 checks): which AI crawlers robots.txt allows, content without JavaScript, llms.txt, structured data, freshness, identity, agent standards, with copy-ready fixes
+- **Brand Memory**: confirmed business facts that every AI output must stick to
+- **AI Feed**: generated llms.txt, Organization/LocalBusiness JSON-LD and FAQ markup, published via the WordPress plugin with rollback
+- **AI visibility tracking**: weekly checks of whether web-connected AI answers mention or cite the business
 - Stripe billing per site (monthly/yearly), customer portal
 - Email alerts when a site gets worse, monthly reports, trial reminders
 

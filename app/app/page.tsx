@@ -29,12 +29,17 @@ export default async function Dashboard() {
             const a = latest.get(site.id);
             return (
               <li key={site.id}>
-                <Link href={`/app/sites/${site.id}`} className="flex items-center justify-between gap-4 py-4 hover:bg-white">
+                <Link href={`/app/sites/${site.id}`} className="flex items-center justify-between gap-4 px-2 py-4 hover:bg-white">
                   <span>
                     <span className="font-medium">{site.host}</span>
                     <span className="block text-sm text-muted">{a ? `Last audit ${a.createdAt.toLocaleDateString('en-GB')} · ${a.pagesCount} pages` : 'First audit running…'}</span>
                   </span>
-                  {a?.score != null && <span className={`font-mono text-3xl ${scoreColour(a.score)}`}>{a.score}</span>}
+                  {a?.score != null && (
+                    <span className="flex gap-5 text-right">
+                      <span><span className="block text-xs text-muted">SEO</span><span className={`font-mono text-2xl ${scoreColour(a.score)}`}>{a.score}</span></span>
+                      <span><span className="block text-xs text-muted">AI</span><span className={`font-mono text-2xl ${a.aiScore != null ? scoreColour(a.aiScore) : 'text-muted'}`}>{a.aiScore ?? '–'}</span></span>
+                    </span>
+                  )}
                 </Link>
               </li>
             );

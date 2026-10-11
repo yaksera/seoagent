@@ -29,11 +29,11 @@ export function AuditForm() {
           className="min-h-12 flex-1 rounded-md border border-line bg-white px-3 text-base disabled:opacity-60"
         />
         <button disabled={busy} className="min-h-12 rounded-md bg-ink px-5 font-medium text-white hover:bg-accent disabled:opacity-60">
-          {busy ? 'Checking pages…' : 'Run audit'}
+          {busy ? 'Checking pages…' : 'Get my free score'}
         </button>
       </div>
       <p className="mt-2 text-sm text-muted" aria-live="polite">
-        {busy ? 'Reading up to 50 pages. This usually takes under a minute.' : 'Checks up to 50 pages. Nothing on your site is changed.'}
+        {busy ? 'Reading your pages. This usually takes under a minute.' : 'Free · 20 pages · Google SEO and AI-readiness scores · nothing on your site is changed.'}
       </p>
       {error && <p role="alert" className="mt-3 rounded-md border border-critical/30 bg-critical/5 px-3 py-2 text-sm text-critical">{error}</p>}
     </form>
