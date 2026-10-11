@@ -23,6 +23,13 @@ export type PageData = {
   hasViewport: boolean;
   jsonLdCount: number;
   jsonLdInvalid: number;
+  jsonLdTypes?: string[];
+  firstParagraphWords?: number;
+  h2Count?: number;
+  hasModifiedDate?: boolean;
+  phones?: string[];
+  emails?: string[];
+  socialLinks?: string[];
   responseMs: number;
   error?: string;
 };
@@ -37,6 +44,10 @@ export type CrawlResult = {
   blockedByRobots: string[];
   pages: PageData[];
   limitReached: boolean;
+  robotsTxt?: string;
+  sitemapIsXml?: boolean;
+  sitemapHasLastmod?: boolean;
+  sitemapInRobots?: boolean;
 };
 
 const SKIP_EXT = /\.(jpe?g|png|gif|webp|avif|svg|ico|pdf|zip|rar|gz|mp4|webm|mp3|wav|css|js|json|xml|txt|woff2?|ttf|eot|docx?|xlsx?|pptx?)$/i;
@@ -62,7 +73,26 @@ export function extractPage(html: string, pageUrl: string, host: string) {
   const $ = cheerio.load(html);
   const jsonLd = $('script[type="application/ld+json"]').toArray().map(el => $(el).text());
   let jsonLdInvalid = 0;
-  for (const block of jsonLd) { try { JSON.parse(block); } catch { jsonLdInvalid++; } }
+  const jsonLdTypes = new Set<string>();
+  const collectTypes = (node: unknown): void => {
+    if (Array.isArray(node)) { node.forEach(collectTypes); return; }
+    if (!node || typeof node !== 'object') return;
+    const o = node as Record<string, unknown>;
+    const t = o['@type'];
+    (Array.isArray(t) ? t : [t]).forEach(x => { if (typeof x === 'string') jsonLdTypes.add(x); });
+    if (o['@graph']) collectTypes(o['@graph']);
+  };
+  for (const block of jsonLd) { try { collectTypes(JSON.parse(block)); } catch { jsonLdInvalid++; } }
+  const phones = new Set<string>();
+  const emails = new Set<string>();
+  const socialLinks = new Set<string>();
+  $('a[href]').each((_, el) => {
+    const href = ($(el).attr('href') ?? '').trim();
+    if (/^tel:/i.test(href)) { const d = href.replace(/[^\d+]/g, ''); if (d.length >= 7) phones.add(d.replace(/^00/, '+')); }
+    else if (/^mailto:/i.test(href)) { const e = href.slice(7).split('?')[0].toLowerCase(); if (e.includes('@')) emails.add(e); }
+    else if (/^https?:\/\/(www\.)?(facebook|instagram|linkedin|x|twitter|youtube|tiktok|pinterest)\.com\//i.test(href)) socialLinks.add(href.split('?')[0]);
+  });
+  const hasModifiedDate = $('meta[property="article:modified_time"], meta[itemprop="dateModified"], time[datetime]').length > 0 || jsonLd.some(b => b.includes('dateModified'));
 
   const internalLinks = new Set<string>();
   $('a[href]').each((_, el) => {
@@ -76,6 +106,7 @@ export function extractPage(html: string, pageUrl: string, host: string) {
   const headings = $('h1,h2,h3').toArray().map(el => ({ level: Number(el.tagName[1]), text: $(el).text().replace(/\s+/g, ' ').trim() }));
 
   $('script,style,noscript,svg,template,iframe').remove();
+  const firstParagraph = ($('main p, article p, body p').toArray().map(el => $(el).text().replace(/\s+/g, ' ').trim()).find(t => t.split(' ').length >= 8) ?? '');
   const main = $('main').length ? $('main') : $('body');
   const text = main.text().replace(/\s+/g, ' ').trim();
   const words = text ? text.split(' ') : [];
@@ -96,10 +127,21 @@ export function extractPage(html: string, pageUrl: string, host: string) {
     hasViewport: $('meta[name="viewport"]').length > 0,
     jsonLdCount: jsonLd.length,
     jsonLdInvalid,
+    jsonLdTypes: [...jsonLdTypes],
+    firstParagraphWords: firstParagraph ? firstParagraph.split(' ').length : 0,
+    h2Count: headings.filter(h => h.level === 2).length,
+    hasModifiedDate,
+    phones: [...phones],
+    emails: [...emails],
+    socialLinks: [...socialLinks],
   };
 }
 
+const sitemapMeta = { isXml: false, hasLastmod: false };
+
 async function readSitemaps(urls: string[], ua: string, host: string): Promise<string[]> {
+  sitemapMeta.isXml = false;
+  sitemapMeta.hasLastmod = false;
   const found = new Set<string>();
   const queue = [...urls];
   let fetched = 0;
@@ -109,6 +151,8 @@ async function readSitemaps(urls: string[], ua: string, host: string): Promise<s
     try {
       const res = await safeFetch(sm, { userAgent: ua, maxBytes: 5_000_000 });
       if (res.status !== 200) continue;
+      if (/<(urlset|sitemapindex)[\s>]/i.test(res.body)) sitemapMeta.isXml = true;
+      if (/<lastmod>/i.test(res.body)) sitemapMeta.hasLastmod = true;
       const locs = [...res.body.matchAll(/<loc>\s*(?:<!\[CDATA\[)?\s*([^<\]\s]+)\s*(?:\]\]>)?\s*<\/loc>/gi)].map(m => m[1]);
       const isIndex = /<sitemapindex/i.test(res.body);
       for (const loc of locs) {
@@ -132,18 +176,22 @@ export async function crawlSite(startRaw: string, opts: { maxPages: number; user
 
   let robots: ReturnType<typeof robotsParser> | null = null;
   let robotsFound = false;
+  let robotsTxt = '';
+  let sitemapInRobots = false;
   let sitemapCandidates = [`${origin}/sitemap.xml`];
   try {
     const r = await safeFetch(`${origin}/robots.txt`, { userAgent, maxBytes: 500_000 });
     if (r.status === 200 && !/<html/i.test(r.body)) {
       robotsFound = true;
+      robotsTxt = r.body.slice(0, 50_000);
       robots = robotsParser(`${origin}/robots.txt`, r.body);
       const listed = robots.getSitemaps();
-      if (listed.length) sitemapCandidates = listed;
+      if (listed.length) { sitemapCandidates = listed; sitemapInRobots = true; }
     }
   } catch { /* treated as no robots.txt */ }
 
   const sitemapUrls = await readSitemaps(sitemapCandidates, userAgent, host);
+  const { isXml: sitemapIsXml, hasLastmod: sitemapHasLastmod } = sitemapMeta;
   const seen = new Set<string>();
   const queue: string[] = [];
   const enqueue = (u: string) => { if (!seen.has(u)) { seen.add(u); queue.push(u); } };
@@ -188,5 +236,6 @@ export async function crawlSite(startRaw: string, opts: { maxPages: number; user
     startUrl: home.url, host, https: new URL(home.url).protocol === 'https:', robotsFound,
     sitemapFound: sitemapUrls.length > 0, sitemapUrls, blockedByRobots, pages,
     limitReached: pages.length >= maxPages && queue.length > 0,
+    robotsTxt, sitemapIsXml, sitemapHasLastmod, sitemapInRobots,
   };
 }

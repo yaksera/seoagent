@@ -5,6 +5,9 @@ import type { schema } from '@/lib/db';
 import type { PageFix } from '@/lib/fixes';
 import type { Issue, Severity } from '@/lib/rules';
 import { AuditProgress } from './audit-progress';
+import { AiReport } from './ai-report';
+import { ScoreRing } from './score-ring';
+import type { AiReadiness } from '@/lib/ai-readiness';
 
 type AuditRow = typeof schema.audits.$inferSelect;
 
@@ -14,7 +17,6 @@ const SEV: Record<Severity, { label: string; cls: string }> = {
   info: { label: 'Info', cls: 'text-info border-info/40' },
 };
 
-const scoreColour = (s: number) => (s >= 80 ? 'text-accent' : s >= 50 ? 'text-warning' : 'text-critical');
 const pathOf = (u: string) => { try { const x = new URL(u); return x.pathname + x.search; } catch { return u; } };
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -33,6 +35,7 @@ export function AuditReport({ audit, canFix, fixes, applyAvailable }: { audit: A
   const crawl = audit.crawl as CrawlResult;
   const issues = (audit.issues as Issue[]) ?? [];
   const score = audit.score ?? 0;
+  const ai = audit.aiReadiness as AiReadiness | null;
   const counts: Record<Severity, number> = { critical: 0, warning: 0, info: 0 };
   issues.forEach(i => { counts[i.severity] += i.findings.length; });
 
@@ -42,26 +45,37 @@ export function AuditReport({ audit, canFix, fixes, applyAvailable }: { audit: A
 
   return (
     <div className="space-y-12">
-      <section className="grid gap-6 border-b border-line pb-8 sm:grid-cols-[auto_1fr] sm:items-end">
+      <section className="space-y-6 border-b border-line pb-8">
         <div>
-          <p className="text-sm text-muted">Health score</p>
-          <p className={`font-mono text-7xl font-medium leading-none ${scoreColour(score)}`}>{score}</p>
-        </div>
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{crawl.host}</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">{crawl.host}</h1>
           <p className="mt-1 text-sm text-muted">
             {plural(crawl.pages.length, 'page', 'pages')} checked in {Math.round((audit.durationMs ?? 0) / 1000)}s · {audit.createdAt.toLocaleString('en-GB')}
             {crawl.limitReached && ' · page limit reached'}
           </p>
-          <p className="mt-3 flex flex-wrap gap-4 text-sm">
-            <span><b className="font-mono text-critical">{counts.critical}</b> critical</span>
-            <span><b className="font-mono text-warning">{counts.warning}</b> {counts.warning === 1 ? 'warning' : 'warnings'}</span>
-            <span><b className="font-mono text-info">{counts.info}</b> {counts.info === 1 ? 'notice' : 'notices'}</span>
-          </p>
         </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="rounded-xl border border-line bg-white p-5">
+            <ScoreRing score={score} label="Google SEO health" sub={`${counts.critical} critical · ${counts.warning} ${counts.warning === 1 ? 'warning' : 'warnings'} · ${counts.info} ${counts.info === 1 ? 'notice' : 'notices'}`} />
+          </div>
+          <div className="rounded-xl border border-line bg-white p-5">
+            <ScoreRing score={ai?.score ?? null} label="AI readiness" sub={ai ? `${ai.level} · ChatGPT, Claude, Perplexity, Google AI` : 'Run a new audit to get this score'} />
+          </div>
+        </div>
+        <nav aria-label="Report sections" className="flex flex-wrap gap-2 text-sm">
+          {ai && <a href="#ai" className="rounded-full border border-line bg-white px-3 py-1 hover:border-ink">AI readiness</a>}
+          <a href="#issues" className="rounded-full border border-line bg-white px-3 py-1 hover:border-ink">SEO problems</a>
+          {fixPages.length > 0 && <a href="#fixes" className="rounded-full border border-line bg-white px-3 py-1 hover:border-ink">Fixes</a>}
+        </nav>
       </section>
 
-      <section aria-labelledby="issues">
+      {ai && (
+        <section aria-labelledby="ai" className="scroll-mt-6">
+          <h2 id="ai" className="mb-4 text-xl font-semibold">AI readiness</h2>
+          <AiReport ai={ai} />
+        </section>
+      )}
+
+      <section aria-labelledby="issues" className="scroll-mt-6">
         <h2 id="issues" className="text-xl font-semibold">Problems found</h2>
         {issues.length === 0 && <p className="mt-3 text-muted">No problems found on the pages checked.</p>}
         <div className="mt-4 divide-y divide-line border-y border-line">

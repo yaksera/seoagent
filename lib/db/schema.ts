@@ -79,6 +79,8 @@ export const audits = pgTable('audits', {
   error: text('error'),
   ip: text('ip'),
   durationMs: integer('duration_ms'),
+  aiScore: integer('ai_score'),
+  aiReadiness: jsonb('ai_readiness'),
   startedAt: timestamp('started_at', { withTimezone: true }),
   finishedAt: timestamp('finished_at', { withTimezone: true }),
   createdAt: createdAt(),
@@ -172,3 +174,33 @@ export const notifications = pgTable('notifications', {
   key: text('key').notNull(), // dedupe key, e.g. "report:2026-10"
   sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => [uniqueIndex('notifications_key_idx').on(t.accountId, t.key)]);
+
+// Brand Memory: the business facts every AI output must stick to, plus the generated AI feed.
+export const brandProfiles = pgTable('brand_profiles', {
+  siteId: uuid('site_id').primaryKey().references(() => sites.id, { onDelete: 'cascade' }),
+  accountId: uuid('account_id').notNull().references(() => accounts.id),
+  data: jsonb('data').notNull().default({}),
+  feedPublishedAt: timestamp('feed_published_at', { withTimezone: true }),
+  feedPrevious: jsonb('feed_previous'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const visibilityPrompts = pgTable('visibility_prompts', {
+  id: id(),
+  siteId: uuid('site_id').notNull().references(() => sites.id, { onDelete: 'cascade' }),
+  accountId: uuid('account_id').notNull().references(() => accounts.id),
+  prompt: text('prompt').notNull(),
+  createdAt: createdAt(),
+}, t => [index('visibility_prompts_site_idx').on(t.siteId)]);
+
+export const visibilityResults = pgTable('visibility_results', {
+  id: id(),
+  siteId: uuid('site_id').notNull().references(() => sites.id, { onDelete: 'cascade' }),
+  promptId: uuid('prompt_id').notNull().references(() => visibilityPrompts.id, { onDelete: 'cascade' }),
+  engine: text('engine').notNull(),
+  mentioned: boolean('mentioned').notNull(),
+  cited: boolean('cited').notNull(),
+  citedUrls: jsonb('cited_urls').notNull().default([]),
+  excerpt: text('excerpt'),
+  createdAt: createdAt(),
+}, t => [index('visibility_results_site_idx').on(t.siteId, t.createdAt)]);

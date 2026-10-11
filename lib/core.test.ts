@@ -56,3 +56,28 @@ describe('audit rules', () => {
     expect(score).toBeLessThan(80);
   });
 });
+
+describe('AI readiness', async () => {
+  const { scoreAiReadiness } = await import('./ai-readiness');
+  const noProbe = { llmsTxt: false, markdown: false, linkHeader: false, apiCatalog: false, mcpCard: false, agentSkills: false, oauthMeta: false };
+  const good = page({ wordCount: 400, jsonLdTypes: ['LocalBusiness'], firstParagraphWords: 30, h2Count: 3, phones: ['+97714000000'], socialLinks: ['https://facebook.com/x'] });
+
+  it('flags AI search bots blocked in robots.txt with a fix snippet', () => {
+    const c = { ...crawl([good]), robotsTxt: 'User-agent: OAI-SearchBot\nDisallow: /\n\nUser-agent: PerplexityBot\nDisallow: /\n' };
+    const r = scoreAiReadiness(c, noProbe);
+    const check = r.checks.find(x => x.id === 'ai-search-bots')!;
+    expect(check.status).not.toBe('pass');
+    expect(check.snippet).toContain('User-agent: OAI-SearchBot');
+    expect(r.bots.find(b => b.bot === 'PerplexityBot')?.allowed).toBe(false);
+    expect(r.bots.find(b => b.bot === 'ClaudeBot')?.allowed).toBe(true);
+  });
+
+  it('scores a well-prepared site high and a JavaScript-only site low', () => {
+    const ready = scoreAiReadiness({ ...crawl([good, page({ ...good, url: 'https://site.com/about', title: 'About us' }), page({ ...good, url: 'https://site.com/contact', title: 'Contact' })]),
+      robotsTxt: 'User-agent: *\nAllow: /\nUser-agent: GPTBot\nDisallow: /\nContent-Signal: search=yes\nSitemap: https://site.com/sitemap.xml', sitemapIsXml: true, sitemapInRobots: true, sitemapHasLastmod: true },
+      { ...noProbe, llmsTxt: true });
+    const jsOnly = scoreAiReadiness(crawl([page({ wordCount: 5, jsonLdTypes: [] })]), noProbe);
+    expect(ready.score).toBeGreaterThanOrEqual(80);
+    expect(jsOnly.score).toBeLessThan(40);
+  });
+});

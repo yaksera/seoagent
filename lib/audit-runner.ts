@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { runAiReadiness } from './ai-readiness';
 import { crawlSite } from './crawler';
 import { getDb, schema } from './db';
 import { enqueue } from './jobs';
@@ -23,8 +24,10 @@ export async function runAuditJob({ auditId }: { auditId: string }) {
   try {
     const crawl = await crawlSite(audit.url, { maxPages: audit.maxPages, userAgent: userAgent() });
     const { issues, score } = runAudit(crawl);
+    const ai = await runAiReadiness(crawl, userAgent()).catch(err => { console.error('[ai-readiness] failed:', err); return null; });
     await db.update(schema.audits).set({
       status: 'done', crawl, issues, score, pagesCount: crawl.pages.length, finishedAt: new Date(), durationMs: Date.now() - started,
+      aiScore: ai?.score ?? null, aiReadiness: ai,
     }).where(eq(schema.audits.id, auditId));
     await auditAlerts(auditId).catch(err => console.error('[alerts] failed:', err));
   } catch (e) {
