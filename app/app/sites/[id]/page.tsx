@@ -22,7 +22,7 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
   if (!site) notFound();
 
   const audits = await db.select({
-    id: schema.audits.id, status: schema.audits.status, score: schema.audits.score, pagesCount: schema.audits.pagesCount,
+    id: schema.audits.id, status: schema.audits.status, score: schema.audits.score, aiScore: schema.audits.aiScore, pagesCount: schema.audits.pagesCount,
     trigger: schema.audits.trigger, createdAt: schema.audits.createdAt, error: schema.audits.error,
   }).from(schema.audits).where(eq(schema.audits.siteId, site.id)).orderBy(desc(schema.audits.createdAt)).limit(20);
   const integrations = await db.select({ provider: schema.integrations.provider, status: schema.integrations.status, meta: schema.integrations.meta })
@@ -30,6 +30,7 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
   const wp = integrations.find(i => i.provider === 'wordpress');
   const google = integrations.find(i => i.provider === 'google');
   const latestDone = audits.find(a => a.status === 'done');
+  const [brand] = await db.select({ feedPublishedAt: schema.brandProfiles.feedPublishedAt }).from(schema.brandProfiles).where(eq(schema.brandProfiles.siteId, site.id));
 
   return (
     <div className="space-y-10">
@@ -54,7 +55,7 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
         <h2 id="history" className="text-lg font-semibold">Audit history</h2>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[480px] text-left text-sm">
-            <thead className="text-muted"><tr className="border-b border-line"><th className="py-2 font-normal">Date</th><th className="font-normal">Type</th><th className="font-normal">Pages</th><th className="font-normal">Score</th><th className="font-normal">Status</th></tr></thead>
+            <thead className="text-muted"><tr className="border-b border-line"><th className="py-2 font-normal">Date</th><th className="font-normal">Type</th><th className="font-normal">Pages</th><th className="font-normal">SEO</th><th className="font-normal">AI</th><th className="font-normal">Status</th></tr></thead>
             <tbody className="divide-y divide-line">
               {audits.map(a => (
                 <tr key={a.id}>
@@ -62,6 +63,7 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
                   <td className="capitalize">{a.trigger}</td>
                   <td className="font-mono">{a.pagesCount ?? '–'}</td>
                   <td className={`font-mono ${a.score != null ? scoreColour(a.score) : ''}`}>{a.score ?? '–'}</td>
+                  <td className={`font-mono ${a.aiScore != null ? scoreColour(a.aiScore) : ''}`}>{a.aiScore ?? '–'}</td>
                   <td title={a.error ?? undefined}>{STATUS[a.status]}</td>
                 </tr>
               ))}
@@ -71,13 +73,24 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
       </section>
 
       <section aria-labelledby="connections" className="grid gap-4 sm:grid-cols-2">
-        <h2 id="connections" className="text-lg font-semibold sm:col-span-2">Connections</h2>
-        <div className="rounded-md border border-line bg-white p-4">
+        <h2 id="connections" className="text-lg font-semibold sm:col-span-2">AI search tools</h2>
+        <div className="rounded-xl border border-line bg-white p-4">
+          <h3 className="font-medium">Brand Memory &amp; AI Feed</h3>
+          <p className="mt-1 text-sm text-muted">{brand ? `Saved${brand.feedPublishedAt ? ' and published' : ''}. Your llms.txt and business data are ready.` : 'Confirm your business facts once. We turn them into llms.txt and structured data for AI.'}</p>
+          <Link href={`/app/sites/${site.id}/brand`} className={`${btnSecondaryCls} mt-3`}>{brand ? 'Edit' : 'Set up'}</Link>
+        </div>
+        <div className="rounded-xl border border-line bg-white p-4">
+          <h3 className="font-medium">AI visibility</h3>
+          <p className="mt-1 text-sm text-muted">See whether ChatGPT and Perplexity mention you when customers ask about businesses like yours.</p>
+          <Link href={`/app/sites/${site.id}/visibility`} className={`${btnSecondaryCls} mt-3`}>Track questions</Link>
+        </div>
+        <h2 className="mt-4 text-lg font-semibold sm:col-span-2">Connections</h2>
+        <div className="rounded-xl border border-line bg-white p-4">
           <h3 className="font-medium">WordPress</h3>
           <p className="mt-1 text-sm text-muted">{wp ? `Connected${wp.status === 'error' ? ' (needs attention)' : ''}. Fixes can be published with one click and rolled back.` : 'Connect to publish fixes straight to your site.'}</p>
           <Link href={`/app/sites/${site.id}/wordpress`} className={`${btnSecondaryCls} mt-3`}>{wp ? 'Manage' : 'Connect WordPress'}</Link>
         </div>
-        <div className="rounded-md border border-line bg-white p-4">
+        <div className="rounded-xl border border-line bg-white p-4">
           <h3 className="font-medium">Google Search Console</h3>
           <p className="mt-1 text-sm text-muted">{google ? 'Connected. Clicks, impressions and queries update daily.' : 'See which searches bring visitors and which keywords are close to page one.'}</p>
           <Link href={`/app/sites/${site.id}/google`} className={`${btnSecondaryCls} mt-3`}>{google ? 'View search data' : 'Connect Google'}</Link>
@@ -85,7 +98,7 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
       </section>
 
       <section aria-labelledby="settings" className="grid gap-6 sm:grid-cols-2">
-        <form action={updateSiteSettings.bind(null, site.id)} className="space-y-3 rounded-md border border-line bg-white p-4">
+        <form action={updateSiteSettings.bind(null, site.id)} className="space-y-3 rounded-xl border border-line bg-white p-4">
           <h2 id="settings" className="font-semibold">Settings</h2>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="weeklyCrawl" defaultChecked={site.settings.weeklyCrawl !== false} /> Audit automatically every week</label>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="reportEmails" defaultChecked={site.settings.reportEmails !== false} /> Email me the monthly report and alerts</label>

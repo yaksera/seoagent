@@ -113,3 +113,16 @@ describe('Brand Memory and AI feed', async () => {
     expect(parseBrandForm(bad).error).toMatch(/full URLs/);
   });
 });
+
+describe('AI visibility detection', async () => {
+  const { detect, suggestPrompts } = await import('./visibility');
+  it('detects mentions by name and citations by domain', () => {
+    const r = detect('Top picks: Yeti Plumbing is fast and fair [1].', ['https://www.yeti.np/services', 'https://other.com'], 'Yeti Plumbing', 'yeti.np');
+    expect(r).toMatchObject({ mentioned: true, cited: true, citedUrls: ['https://www.yeti.np/services'] });
+    expect(detect('Try ABC Pipes or Kathmandu Fixers.', ['https://abc.com'], 'Yeti Plumbing', 'yeti.np')).toMatchObject({ mentioned: false, cited: false });
+  });
+  it('suggests local questions from Brand Memory', () => {
+    const q = suggestPrompts({ businessName: 'Yeti Plumbing', city: 'Kathmandu', services: ['Leak repair'] } as never, 'yeti.np');
+    expect(q[0]).toBe('Who is the best leak repair provider in Kathmandu?');
+  });
+});

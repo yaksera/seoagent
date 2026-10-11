@@ -20,7 +20,7 @@ export function Notice({ state }: { state?: { error?: string; ok?: string } }) {
 }
 
 type Action = (state: { error?: string; ok?: string } | undefined, form: FormData) => Promise<{ error?: string; ok?: string } | undefined>;
-type Field = { name: string; label: string; type?: string; autoComplete?: string; defaultValue?: string; hidden?: boolean };
+type Field = { name: string; label: string; type?: string; autoComplete?: string; defaultValue?: string; hidden?: boolean; textarea?: boolean };
 
 export function AuthForm({ action, fields, submit, pending, footer }: { action: Action; fields: Field[]; submit: string; pending: string; footer?: React.ReactNode }) {
   const [state, formAction] = useActionState(action, undefined);
@@ -31,7 +31,9 @@ export function AuthForm({ action, fields, submit, pending, footer }: { action: 
         : (
           <label key={f.name} className="block text-sm font-medium">
             {f.label}
-            <input name={f.name} type={f.type ?? 'text'} autoComplete={f.autoComplete} defaultValue={f.defaultValue} required className={inputCls} />
+            {f.textarea
+              ? <textarea name={f.name} defaultValue={f.defaultValue} rows={5} required className={`${inputCls} py-2`} />
+              : <input name={f.name} type={f.type ?? 'text'} autoComplete={f.autoComplete} defaultValue={f.defaultValue} required className={inputCls} />}
           </label>
         ))}
       <Notice state={state} />

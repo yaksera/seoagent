@@ -97,3 +97,35 @@ async function callOpenRouter<T>(opts: CallOptions<T>): Promise<CallResult<T>> {
   }
   throw new Error(`The AI returned an invalid answer twice (${lastError}).`);
 }
+
+export type TextResult = { text: string; citations: string[]; model: string; costUsd: number | null };
+
+// Free-text call with web-grounded models (e.g. perplexity/sonar or any model with ":online").
+// Same budget check and cost logging as callJson.
+export async function callText(opts: { ctx: CallOptions<unknown>['ctx']; model: string; prompt: string; maxTokens?: number }): Promise<TextResult> {
+  const key = process.env.OPENROUTER_API_KEY;
+  if (!key) throw new Error('OPENROUTER_API_KEY is not set.');
+  const { ctx } = opts;
+  if (ctx.siteId && (await monthSpendUsd(ctx.siteId)) >= LIMITS.llmBudgetPerSiteUsd) throw new Error('This site has reached its AI budget for the month.');
+  const db = await getDb();
+  const started = Date.now();
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      signal: AbortSignal.timeout(90_000),
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'HTTP-Referer': process.env.APP_URL || 'http://localhost:3000', 'X-Title': 'SEO Agent' },
+      body: JSON.stringify({ model: opts.model, messages: [{ role: 'user', content: opts.prompt }], max_tokens: opts.maxTokens ?? 700, usage: { include: true } }),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json) throw new Error(json?.error?.message ?? `OpenRouter error ${res.status}`);
+    const msg = json.choices?.[0]?.message ?? {};
+    const fromAnnotations = (msg.annotations ?? []).map((a: { url_citation?: { url?: string } }) => a.url_citation?.url).filter(Boolean);
+    const citations = [...new Set<string>([...(json.citations ?? []), ...fromAnnotations])];
+    const result = { text: String(msg.content ?? ''), citations, model: json.model ?? opts.model, costUsd: json.usage?.cost ?? null };
+    await db.insert(schema.llmCalls).values({ ...ctx, model: result.model, costUsd: result.costUsd, latencyMs: Date.now() - started, ok: true });
+    return result;
+  } catch (e) {
+    await db.insert(schema.llmCalls).values({ ...ctx, model: opts.model, latencyMs: Date.now() - started, ok: false, error: (e instanceof Error ? e.message : String(e)).slice(0, 1000) });
+    throw e;
+  }
+}

@@ -3,11 +3,13 @@ import { scheduleSearchConsoleSyncs, syncSearchConsole } from './google';
 import { claimJob, failJob, finishJob, recoverStaleJobs, type JobHandler } from './jobs';
 import { runMaintenance } from './maintenance';
 import { monthlyReports, trialReminders } from './notifications';
+import { runVisibilityCheck, scheduleVisibilityChecks } from './visibility';
 
 // Handlers for each job type.
 const handlers: Record<string, JobHandler> = {
   audit: p => runAuditJob(p as { auditId: string }),
   'gsc-sync': p => syncSearchConsole(p as { siteId: string }),
+  visibility: p => runVisibilityCheck(p as { siteId: string }),
 };
 
 export function registerHandler(type: string, handler: JobHandler) {
@@ -22,6 +24,7 @@ const scheduled: Record<string, Scheduled> = {
   monthlyReports: { everyMs: 60 * 60_000, run: monthlyReports },
   trialReminders: { everyMs: 60 * 60_000, run: trialReminders },
   maintenance: { everyMs: 6 * 60 * 60_000, run: runMaintenance },
+  visibility: { everyMs: 60 * 60_000, run: scheduleVisibilityChecks },
 };
 
 export function registerSchedule(name: string, everyMs: number, run: () => Promise<unknown>) {
