@@ -19,8 +19,9 @@ async function createDb() {
   const { PGlite } = await import('@electric-sql/pglite');
   const { drizzle } = await import('drizzle-orm/pglite');
   const { migrate } = await import('drizzle-orm/pglite/migrator');
-  const dir = path.join(process.cwd(), 'data', 'pglite');
-  await mkdir(dir, { recursive: true });
+  // PGLITE_DIR=memory:// gives a throwaway in-memory database (used by tests).
+  const dir = process.env.PGLITE_DIR || path.join(process.cwd(), 'data', 'pglite');
+  if (!dir.startsWith('memory://')) await mkdir(dir, { recursive: true });
   const db = drizzle(new PGlite(dir), { schema });
   await migrate(db, { migrationsFolder });
   return db;

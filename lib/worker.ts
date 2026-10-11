@@ -1,9 +1,11 @@
 import { runAuditJob, scheduleWeeklyAudits } from './audit-runner';
+import { scheduleSearchConsoleSyncs, syncSearchConsole } from './google';
 import { claimJob, failJob, finishJob, recoverStaleJobs, type JobHandler } from './jobs';
 
-// Handlers for each job type. Later phases register more here.
+// Handlers for each job type.
 const handlers: Record<string, JobHandler> = {
   audit: p => runAuditJob(p as { auditId: string }),
+  'gsc-sync': p => syncSearchConsole(p as { siteId: string }),
 };
 
 export function registerHandler(type: string, handler: JobHandler) {
@@ -14,6 +16,7 @@ type Scheduled = { everyMs: number; run: () => Promise<unknown>; last?: number }
 const scheduled: Record<string, Scheduled> = {
   weeklyAudits: { everyMs: 15 * 60_000, run: scheduleWeeklyAudits },
   recoverStale: { everyMs: 5 * 60_000, run: recoverStaleJobs },
+  searchConsole: { everyMs: 60 * 60_000, run: scheduleSearchConsoleSyncs },
 };
 
 export function registerSchedule(name: string, everyMs: number, run: () => Promise<unknown>) {
