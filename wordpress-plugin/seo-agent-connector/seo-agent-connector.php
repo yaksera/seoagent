@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: SEO Agent Connector
- * Description: Lets SEO Agent publish approved title and meta description fixes, with rollback. Works with Yoast SEO, Rank Math, SEOPress, or on its own.
- * Version: 1.0.0
+ * Description: Lets SEO Agent publish approved title and meta description fixes, llms.txt and business structured data, with rollback. Works with Yoast SEO, Rank Math, SEOPress, or on its own.
+ * Version: 1.1.0
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * License: GPLv2 or later
@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-const SEO_AGENT_VERSION = '1.0.0';
+const SEO_AGENT_VERSION = '1.1.0';
 const SEO_AGENT_OPTION_SECRET = 'seo_agent_secret';
 const SEO_AGENT_META_TITLE = '_seo_agent_title';
 const SEO_AGENT_META_DESC = '_seo_agent_description';
@@ -130,6 +130,53 @@ add_action('rest_api_init', function () {
         },
     ]);
 });
+
+// AI feed: llms.txt content and the business JSON-LD, stored as options.
+add_action('rest_api_init', function () {
+    register_rest_route('seo-agent/v1', '/feed', [
+        'methods'             => 'POST',
+        'permission_callback' => 'seo_agent_authorize',
+        'callback'            => function (WP_REST_Request $r) {
+            $previous = [
+                'llms_txt' => (string) get_option('seo_agent_llms_txt', ''),
+                'json_ld'  => (string) get_option('seo_agent_json_ld', ''),
+            ];
+            $set = (array) $r->get_param('set');
+            if (array_key_exists('llms_txt', $set)) {
+                update_option('seo_agent_llms_txt', wp_check_invalid_utf8((string) $set['llms_txt']), false);
+            }
+            if (array_key_exists('json_ld', $set)) {
+                $json = (string) $set['json_ld'];
+                if ($json !== '' && json_decode($json) === null) {
+                    return new WP_Error('seo_agent_invalid_json', 'Invalid JSON-LD.', ['status' => 400]);
+                }
+                update_option('seo_agent_json_ld', $json, false);
+            }
+            return ['previous' => $previous];
+        },
+    ]);
+});
+
+// Serve /llms.txt from the stored option (a real llms.txt file on disk takes precedence).
+add_action('init', function () {
+    $path = wp_parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
+    if ($path !== '/llms.txt') return;
+    $txt = (string) get_option('seo_agent_llms_txt', '');
+    if ($txt === '') return;
+    header('Content-Type: text/plain; charset=utf-8');
+    header('X-Robots-Tag: noindex');
+    echo $txt; // plain text, not HTML
+    exit;
+}, 0);
+
+add_action('wp_head', function () {
+    if (!is_front_page()) return;
+    $json = (string) get_option('seo_agent_json_ld', '');
+    if ($json === '') return;
+    $decoded = json_decode($json);
+    if ($decoded === null) return;
+    echo '<script type="application/ld+json">' . wp_json_encode($decoded, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG) . "</script>\n";
+}, 5);
 
 // Output for sites without an SEO plugin.
 add_filter('pre_get_document_title', function ($title) {

@@ -24,7 +24,7 @@ Rules that always apply:
 - Respond with JSON only, matching the schema exactly.`;
 
 // Keeps data from closing our tags early (a simple prompt-injection trick).
-export const escapeData = (s: string) => s.replace(/<\/?(page|page_content|site)[^>]*>/gi, '');
+export const escapeData = (s: string) => s.replace(/<\/?(page|page_content|site|business_info)[^>]*>/gi, '');
 
 export async function monthSpendUsd(siteId: string) {
   const db = await getDb();

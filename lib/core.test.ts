@@ -81,3 +81,35 @@ describe('AI readiness', async () => {
     expect(jsOnly.score).toBeLessThan(40);
   });
 });
+
+describe('Brand Memory and AI feed', async () => {
+  const { buildJsonLd, buildLlmsTxt, parseBrandForm } = await import('./brand');
+  const form = new FormData();
+  Object.entries({ businessName: 'Yeti Plumbing', schemaType: 'HomeAndConstructionBusiness', description: 'Plumbers in Kathmandu.', services: 'Leak repair\nBoiler service\n',
+    areaServed: 'Kathmandu Valley', street: '', city: 'Kathmandu', region: '', postalCode: '', country: 'NP', phone: '+977 1 400 0000', email: 'hi@yeti.np',
+    hours: 'Mo-Fr 09:00-17:00', priceRange: '$$', logoUrl: '', sameAs: 'https://facebook.com/yeti', faq_q_0: 'Do you do emergencies?', faq_a_0: 'Yes, 24/7.' }).forEach(([k, v]) => form.set(k, v));
+
+  it('parses the form and builds JSON-LD with only provided facts', () => {
+    const { data, error } = parseBrandForm(form);
+    expect(error).toBeUndefined();
+    expect(data!.services).toEqual(['Leak repair', 'Boiler service']);
+    const ld = buildJsonLd(data!, 'https://yeti.np/') as Record<string, unknown>;
+    expect(ld['@type']).toBe('HomeAndConstructionBusiness');
+    expect(ld.telephone).toBe('+977 1 400 0000');
+    expect(ld).not.toHaveProperty('logo');
+    expect((ld.address as Record<string, string>).addressLocality).toBe('Kathmandu');
+  });
+
+  it('builds llms.txt with summary, services, pages and FAQs', () => {
+    const txt = buildLlmsTxt(parseBrandForm(form).data!, crawl([page({ title: 'Home | Yeti', metaDescription: 'Fast plumbers' })]));
+    expect(txt).toMatch(/^# Yeti Plumbing\n\n> Plumbers in Kathmandu\./);
+    expect(txt).toContain('- Leak repair');
+    expect(txt).toContain('- [Home | Yeti](https://site.com/): Fast plumbers');
+    expect(txt).toContain('### Do you do emergencies?');
+  });
+
+  it('rejects social links that are not URLs', () => {
+    const bad = new FormData(); form.forEach((v, k) => bad.set(k, v)); bad.set('sameAs', 'facebook yeti');
+    expect(parseBrandForm(bad).error).toMatch(/full URLs/);
+  });
+});

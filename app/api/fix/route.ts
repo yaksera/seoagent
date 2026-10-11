@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getSession } from '@/lib/auth';
 import type { CrawlResult } from '@/lib/crawler';
 import { getDb, schema } from '@/lib/db';
+import { type Brand, brandFacts } from '@/lib/brand';
 import { suggestFixes } from '@/lib/fixes';
 import { isActive } from '@/lib/plans';
 
@@ -33,7 +34,8 @@ export async function POST(req: Request) {
   if (cached) return Response.json({ ...(cached.suggestion as object), fixId: cached.id, status: cached.status });
 
   try {
-    const fix = await suggestFixes(page, crawl.pages, crawl.host, { accountId: session.account.id, siteId: audit.siteId });
+    const [profile] = audit.siteId ? await db.select().from(schema.brandProfiles).where(eq(schema.brandProfiles.siteId, audit.siteId)) : [];
+    const fix = await suggestFixes(page, crawl.pages, crawl.host, { accountId: session.account.id, siteId: audit.siteId }, brandFacts((profile?.data as Brand) ?? null));
     const [row] = await db.insert(schema.fixes)
       .values({ auditId: audit.id, accountId: session.account.id, siteId: audit.siteId, pageUrl: page.url, suggestion: fix })
       .onConflictDoNothing().returning();

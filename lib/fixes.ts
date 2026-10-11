@@ -29,7 +29,8 @@ H1: 20 to 70 characters, one clear heading for the page. It can differ from the 
 
 If a current value already meets these rules and matches the page, set keep=true and repeat it as recommended.
 Give one recommended option and one alternative per field, and a one-sentence reason in plain English.
-Set confidence lower if the page content is thin or unclear.`;
+Set confidence lower if the page content is thin or unclear.
+If <business_info> is given, it is the confirmed source of truth for the business name, services and location: prefer it over guesses from the page, and never add facts that appear in neither.`;
 
 // Model output is checked in code: lengths, duplicates and invented numbers.
 function check(fix: FixSuggestion, page: PageData, otherTitles: Set<string>): string[] {
@@ -47,9 +48,13 @@ function check(fix: FixSuggestion, page: PageData, otherTitles: Set<string>): st
   return warnings;
 }
 
-export async function suggestFixes(page: PageData, allPages: PageData[], siteHost: string, ctx: { accountId: string | null; siteId: string | null }): Promise<PageFix> {
+export async function suggestFixes(page: PageData, allPages: PageData[], siteHost: string, ctx: { accountId: string | null; siteId: string | null }, facts = ''): Promise<PageFix> {
   const others = allPages.filter(p => p.url !== page.url && p.title);
   const user = `<site>${escapeData(siteHost)}</site>
+${facts ? `<business_info>
+${escapeData(facts)}
+</business_info>
+` : ''}
 <page>
 url: ${escapeData(page.finalUrl)}
 current_title: ${escapeData(page.title) || '(none)'}

@@ -102,3 +102,27 @@ export async function rollbackFix(fixId: string, accountId: string) {
     throw e;
   }
 }
+
+type Feed = { llms_txt: string; json_ld: string };
+
+// Publishes llms.txt + business JSON-LD through the plugin; keeps what was there for rollback.
+export async function publishFeed(siteId: string, accountId: string, feed: Feed) {
+  const conn = await getCreds(siteId, accountId);
+  if (!conn) throw new Error('Connect WordPress for this site first.');
+  const db = await getDb();
+  const res = await wpCall<{ previous: Feed }>(conn.creds, '/feed', { set: feed });
+  const [profile] = await db.select().from(schema.brandProfiles).where(eq(schema.brandProfiles.siteId, siteId));
+  // Keep the original pre-SEO-Agent values across repeated publishes.
+  const previous = profile?.feedPublishedAt && profile.feedPrevious ? profile.feedPrevious : res.previous;
+  await db.update(schema.brandProfiles).set({ feedPublishedAt: new Date(), feedPrevious: previous }).where(eq(schema.brandProfiles.siteId, siteId));
+}
+
+export async function rollbackFeed(siteId: string, accountId: string) {
+  const conn = await getCreds(siteId, accountId);
+  if (!conn) throw new Error('WordPress is no longer connected.');
+  const db = await getDb();
+  const [profile] = await db.select().from(schema.brandProfiles).where(eq(schema.brandProfiles.siteId, siteId));
+  if (!profile?.feedPublishedAt) throw new Error('Nothing published to roll back.');
+  await wpCall(conn.creds, '/feed', { set: (profile.feedPrevious as Feed) ?? { llms_txt: '', json_ld: '' } });
+  await db.update(schema.brandProfiles).set({ feedPublishedAt: null, feedPrevious: null }).where(eq(schema.brandProfiles.siteId, siteId));
+}
