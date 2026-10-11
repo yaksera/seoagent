@@ -1,6 +1,7 @@
 import { and, eq, gt, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { createAudit } from '@/lib/audit-runner';
+import { getSession } from '@/lib/auth';
 import { getDb, schema } from '@/lib/db';
 import { LIMITS } from '@/lib/plans';
 import { assertPublicUrl } from '@/lib/safe-fetch';
@@ -9,16 +10,21 @@ export const runtime = 'nodejs';
 
 const body = z.object({ url: z.string().trim().min(3).max(2048) });
 
-// Free audit from the home page: 20 pages, 5 per IP per hour, no account needed.
+// Free audit from the home page: 20 pages, no account needed, rate-limited per network.
 export async function POST(req: Request) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
   const parsed = body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: 'Enter a website address.' }, { status: 400 });
 
   const db = await getDb();
-  const [recent] = await db.select({ n: sql<number>`count(*)::int` }).from(schema.audits)
-    .where(and(eq(schema.audits.ip, ip), eq(schema.audits.trigger, 'free'), gt(schema.audits.createdAt, sql`now() - interval '1 hour'`)));
-  if ((recent?.n ?? 0) >= 5) return Response.json({ error: 'Too many free audits from your network. Try again in an hour, or start a free trial.' }, { status: 429 });
+  // Abuse limit per network. Admins are exempt; in development it is effectively off unless set.
+  const limit = Number(process.env.FREE_AUDITS_PER_HOUR) || (process.env.NODE_ENV === 'production' ? 5 : 1000);
+  const session = await getSession();
+  if (!session?.isAdmin) {
+    const [recent] = await db.select({ n: sql<number>`count(*)::int` }).from(schema.audits)
+      .where(and(eq(schema.audits.ip, ip), eq(schema.audits.trigger, 'free'), gt(schema.audits.createdAt, sql`now() - interval '1 hour'`)));
+    if ((recent?.n ?? 0) >= limit) return Response.json({ error: 'Too many free audits from your network. Try again in an hour, or start a free trial.' }, { status: 429 });
+  }
 
   const raw = /^https?:\/\//i.test(parsed.data.url) ? parsed.data.url : `https://${parsed.data.url}`;
   try {
