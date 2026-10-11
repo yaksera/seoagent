@@ -1,42 +1,65 @@
 # SEO Agent
 
-Enter a website, get a plain-English SEO audit and AI-written fixes you can paste straight in.
+An SEO agent for small businesses: it crawls a website, explains every problem in plain English, writes fixes with AI, and publishes the ones you approve to WordPress, with rollback. $49 per website per month.
 
-This is the **MVP** of the product described in `docs/`. It's built to show to real business owners and pre-sell before building the full version.
+## Features
+**For customers**
+- Free 20-page audit from the home page, no account needed
+- Sign up with a 7-day trial: email verification, password reset, settings, account deletion
+- Sites dashboard with health scores; full audits (up to 500 pages) run in the background and repeat weekly
+- 23 checks: indexing, broken pages, redirects, titles, descriptions, headings, thin content, alt text, mobile, structured data, sitemap, HTTPS
+- AI-written title, meta description and H1 per page (OpenRouter), validated in code
+- WordPress connector plugin: publish fixes in one click, conflict check, rollback
+- Google Search Console: clicks, impressions, top searches, keywords close to page one
+- Stripe billing per site (monthly/yearly), customer portal
+- Email alerts when a site gets worse, monthly reports, trial reminders
 
-## What it does now
-- Crawls up to 50 pages (sitemap + internal links, respects robots.txt, polite speed).
-- Runs 23 checks: noindex, broken pages, server errors, redirect chains, canonicals, titles, meta descriptions, duplicates, H1s, thin content, alt text, mobile viewport, language, structured data, sitemap, orphan pages, HTTPS.
-- Health score 0–100 and problems sorted by severity, with the affected pages.
-- "Suggest fixes" on any page: new title, meta description and H1 from OpenRouter, with an alternative, a reason, copy buttons, and code checks for length, duplicates and invented numbers.
-- Blocks requests to private/internal addresses (SSRF protection) and limits audits per IP.
+**For you (`/admin`)**
+- Revenue (MRR), paying accounts, trials, sign-ups, audits, AI cost per site
+- Accounts: search, details, "view as user" support sessions, extend trial, disable
+- Audits, background jobs (with retry), AI usage by model, full activity log
 
-Not yet built: accounts, database, Search Console, applying fixes to WordPress/Shopify, billing. See `docs/BUILD_PROMPTS.md` for the full plan.
+**Under the hood**
+- Next.js 16, TypeScript, Tailwind, Drizzle ORM, Postgres (PGlite locally, zero setup)
+- Postgres job queue with retries and a scheduler, running inside the app
+- SSRF-safe crawler, encrypted integration credentials (AES-256-GCM), scrypt passwords, rate limits, security headers
+- Monthly AI budget per site, every AI call logged with cost
+- Data retention and permanent deletion 30 days after an account is closed
 
-## Run it
+## Run locally
 ```bash
 npm install
-cp .env.example .env.local   # then add your OPENROUTER_API_KEY
+cp .env.example .env.local
+```
+Fill in `.env.local`. At minimum set `ADMIN_EMAILS` (your email), `ENCRYPTION_KEY` (the command is in the file) and `OPENROUTER_API_KEY` for AI fixes. Then:
+```bash
 npm run dev
 ```
-Open http://localhost:3000.
+Open http://localhost:3000, sign up with the admin email, and `/admin` appears in the menu. Emails print to the terminal until you add a Resend key.
 
-Audits are saved as JSON files in `data/audits/` (git-ignored).
+Stripe, Google and Resend are optional locally; each page tells you what's missing.
 
 ## Scripts
-- `npm run dev`: development server
-- `npm run build && npm start`: production
-- `npm test`: unit tests (SSRF protection, crawler parsing, audit rules)
-- `npm run typecheck`
-
-## Cost
-Crawling is free. Each "Suggest fixes" call uses one cheap model request (usually well under $0.01). Results are cached per page, so clicking again costs nothing.
-
-## Project docs
-| File | What it is |
+| Command | What it does |
 |---|---|
-| `docs/REQUIREMENTS.md` | Full product spec (v1 + v2) |
-| `docs/BUILD_PROMPTS.md` | Step-by-step build prompts for the full product |
-| `docs/AGENT_PROMPTS.md` | Runtime AI prompts with output schemas |
-| `docs/env.full.example` | Environment variables for the full product |
-| `CLAUDE.md` | Rules for AI coding agents working on this repo |
+| `npm run dev` | Development server (web + worker) |
+| `npm run build && npm start` | Production build and server |
+| `npm test` | Unit tests + database tests on in-memory Postgres |
+| `npm run typecheck` | TypeScript |
+| `npm run db:generate` | Create a migration after changing `lib/db/schema.ts` |
+
+## Deploy
+See [docs/DEPLOY.md](docs/DEPLOY.md): Neon + Railway/Render/Docker, Stripe, Google OAuth, WordPress plugin, launch checklist.
+
+## Project layout
+| Path | What's there |
+|---|---|
+| `app/` | Pages and API routes: public site, `(auth)`, `app/` (customer dashboard), `admin/` |
+| `lib/crawler.ts`, `lib/rules.ts` | Crawler and audit checks |
+| `lib/fixes.ts`, `lib/openrouter.ts` | AI suggestions, validation, budget and cost logging |
+| `lib/wordpress.ts`, `wordpress-plugin/` | WordPress publishing and the connector plugin |
+| `lib/google.ts`, `lib/google-insights.ts` | Search Console sync and reports |
+| `lib/jobs.ts`, `lib/worker.ts` | Job queue and scheduler |
+| `lib/notifications.ts`, `lib/maintenance.ts` | Emails and data retention |
+| `lib/db/` | Schema and database connection; migrations in `drizzle/` |
+| `docs/` | Requirements, build plan, AI prompts, deploy guide |
