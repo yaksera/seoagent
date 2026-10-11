@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { crawlSite } from './crawler';
 import { getDb, schema } from './db';
 import { enqueue } from './jobs';
+import { auditAlerts } from './notifications';
 import { runAudit } from './rules';
 
 const userAgent = () => process.env.CRAWLER_USER_AGENT || 'SEOAgentBot/1.0';
@@ -25,6 +26,7 @@ export async function runAuditJob({ auditId }: { auditId: string }) {
     await db.update(schema.audits).set({
       status: 'done', crawl, issues, score, pagesCount: crawl.pages.length, finishedAt: new Date(), durationMs: Date.now() - started,
     }).where(eq(schema.audits.id, auditId));
+    await auditAlerts(auditId).catch(err => console.error('[alerts] failed:', err));
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Crawl failed';
     await db.update(schema.audits).set({ status: 'failed', error: message, finishedAt: new Date(), durationMs: Date.now() - started }).where(eq(schema.audits.id, auditId));

@@ -58,3 +58,34 @@ describe('job queue', () => {
     expect(await claimJob()).toBeNull();
   });
 });
+
+describe('notifications and maintenance', () => {
+  it('alerts on a score drop once, sends the monthly report once, and runs cleanup', async () => {
+    const { sql } = await import('drizzle-orm');
+    const [site] = await db.select().from(schema.sites);
+    await db.insert(schema.users).values({ accountId: site.accountId, email: 'owner@a.com', passwordHash: 'x' });
+    await db.update(schema.sites).set({ createdAt: new Date(Date.now() - 90 * 86_400_000) });
+    await db.update(schema.accounts).set({ trialEndsAt: new Date(Date.now() + 86_400_000) });
+    const base = { accountId: site.accountId, siteId: site.id, url: site.url, trigger: 'manual' as const, maxPages: 10, status: 'done' as const };
+    const lastMonth = new Date(); lastMonth.setUTCDate(1); lastMonth.setUTCMonth(lastMonth.getUTCMonth() - 1); lastMonth.setUTCDate(10);
+    await db.insert(schema.audits).values({ ...base, score: 90, issues: [], createdAt: lastMonth });
+    const [bad] = await db.insert(schema.audits).values({
+      ...base, score: 70, issues: [{ id: 'noindex', name: 'Noindex', severity: 'critical', findings: [{ url: site.url }], why: 'x' }],
+    }).returning();
+
+    const { auditAlerts, monthlyReports, trialReminders } = await import('./notifications');
+    await auditAlerts(bad.id);
+    await auditAlerts(bad.id);
+    await monthlyReports();
+    await monthlyReports();
+    await trialReminders();
+    const sent = await db.select({ type: schema.notifications.type }).from(schema.notifications);
+    expect(sent.map(s => s.type).sort()).toEqual(['alert', 'report', 'trial']);
+
+    const { runMaintenance } = await import('./maintenance');
+    await db.update(schema.accounts).set({ deletedAt: new Date(Date.now() - 31 * 86_400_000) });
+    await runMaintenance();
+    const [{ n }] = (await db.execute(sql`select count(*)::int as n from accounts`)).rows as { n: number }[];
+    expect(n).toBe(0);
+  });
+});

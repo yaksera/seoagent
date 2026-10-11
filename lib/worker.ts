@@ -1,6 +1,8 @@
 import { runAuditJob, scheduleWeeklyAudits } from './audit-runner';
 import { scheduleSearchConsoleSyncs, syncSearchConsole } from './google';
 import { claimJob, failJob, finishJob, recoverStaleJobs, type JobHandler } from './jobs';
+import { runMaintenance } from './maintenance';
+import { monthlyReports, trialReminders } from './notifications';
 
 // Handlers for each job type.
 const handlers: Record<string, JobHandler> = {
@@ -17,6 +19,9 @@ const scheduled: Record<string, Scheduled> = {
   weeklyAudits: { everyMs: 15 * 60_000, run: scheduleWeeklyAudits },
   recoverStale: { everyMs: 5 * 60_000, run: recoverStaleJobs },
   searchConsole: { everyMs: 60 * 60_000, run: scheduleSearchConsoleSyncs },
+  monthlyReports: { everyMs: 60 * 60_000, run: monthlyReports },
+  trialReminders: { everyMs: 60 * 60_000, run: trialReminders },
+  maintenance: { everyMs: 6 * 60 * 60_000, run: runMaintenance },
 };
 
 export function registerSchedule(name: string, everyMs: number, run: () => Promise<unknown>) {
